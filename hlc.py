@@ -14,7 +14,7 @@ hope so. Also, it handles all the input graph formats that igraph_ handles.
 .. _igraph: http://igraph.sourceforge.net
 """
 
-from __future__ import division
+from __future__ import division, print_function
 from collections import defaultdict
 from igraph import load
 from igraph import __version__ as igraph_version
@@ -372,6 +372,9 @@ class HierarchicalLinkClusteringApp(object):
                 dest="format",
                 help="assume that the input graph is in the given FORMAT. "
                      "Examples: graphml, gml, ncol, edgelist etc.")
+        self.parser.add_option("-o", "--output", metavar="FILE",
+                dest="output",
+                help="save the results to the given FILE")
         self.parser.add_option("-s", "--min-size", metavar="K",
                 dest="min_size", default=3,
                 help="print only clusters containing at least K nodes. "
@@ -457,8 +460,13 @@ class HierarchicalLinkClusteringApp(object):
             self.log.info("D = %.6f" % algorithm.last_partition_density)
 
         # Print the results
+        if self.options.output:
+            outfile = open(self.options.output, "w")
+            self.log.info("Saving results to %s..." % self.options.output)
+        else:
+            outfile = sys.stdout
         for community in results:
-            print "\t".join(graph.vs[community]["name"])
+            print("\t".join(graph.vs[community]["name"]), file=outfile)
 
 
 def main():
