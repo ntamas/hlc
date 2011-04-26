@@ -16,7 +16,7 @@ hope so. Also, it handles all the input graph formats that igraph_ handles.
 
 from __future__ import division, print_function
 from collections import defaultdict
-from igraph import load
+from igraph import Graph, load
 from igraph import __version__ as igraph_version
 from itertools import izip
 from operator import itemgetter
@@ -51,6 +51,41 @@ class JaccardSimilarityCalculator(object):
         isect = len(set1.intersection(set2))
         return isect / (len(set1) + len(set2) - isect)
 
+    def get_similarity_many(self, pairs):
+        """Returns the Jaccard similarity between many pairs of vertices,
+        assuming that all vertices are linked to themselves."""
+        sim = self.get_similarity
+        return [sim(*pair) for pair in pairs]
+
+class OptimizedJaccardSimilarityCalculator(object):
+    """Calculates pairwise Jaccard similarities on a given unweighted
+    graph, using igraph's optimized C function. When calculating the
+    similarities, it is assumed that every vertex is linked to itself.
+    """
+
+    def __init__(self, graph):
+        self._graph = graph
+
+    def get_similarity(self, v1, v2):
+        """Returns the Jaccard similarity between the two given vertices,
+        assuming that both of them are linked to themselves."""
+        return self._graph.similarity_jaccard(pairs=(v1, v2))
+
+    def get_similarity_many(self, pairs):
+        """Returns the Jaccard similarity between many pairs of vertices,
+        assuming that all vertices are linked to themselves."""
+        return self._graph.similarity_jaccard(pairs=pairs)
+
+    @staticmethod
+    def is_supported():
+        """Returns ``True`` if the version of igraph supports the ``pairs``
+        keyword argument for the Jaccard similarity, ``False`` otherwise."""
+        try:
+            g = Graph.Full(2)
+            g.similarity_jaccard(pairs=(0, 1))
+            return True
+        except:
+            return False
 
 class TanimotoSimilarityCalculator(object):
     """Calculates pairwise Tanimoto coefficients on a given weighted
@@ -85,6 +120,12 @@ class TanimotoSimilarityCalculator(object):
         numerator = sum(value * vec2.get(key, 0)
                         for key, value in vec1.iteritems())
         return numerator / (self._sqsums[v1] + self._sqsums[v2] - numerator)
+
+    def get_similarity_many(self, pairs):
+        """Returns the Jaccard similarity between many pairs of vertices,
+        assuming that all vertices are linked to themselves."""
+        sim = self.get_similarity
+        return [sim(*pair) for pair in pairs]
 
 
 class EdgeCluster(object):
@@ -253,25 +294,26 @@ class HLC(object):
         # Create an adjacency list representation (we already have an edgelist)
         # and select the appropriate similarity function
         if "weight" in self.graph.edge_attributes():
-            similarity = TanimotoSimilarityCalculator(self.graph).get_similarity
+            similarity = TanimotoSimilarityCalculator(self.graph).get_similarity_many
+        elif OptimizedJaccardSimilarityCalculator.is_supported():
+            similarity = OptimizedJaccardSimilarityCalculator(self.graph).get_similarity_many
         else:
-            similarity = JaccardSimilarityCalculator(self.graph).get_similarity
+            similarity = JaccardSimilarityCalculator(self.graph).get_similarity_many
 
         # For each edge in the line graph, compute a similarity score
-        scores = []
-        append, edgelist = scores.append, self._edgelist    # prelookups
+        edgelist = self._edgelist    # prelookup
+        pairs = [None] * linegraph.ecount()
         for edge in linegraph.es:
             (a, b), (c, d) = edgelist[edge.source], edgelist[edge.target]
             if a == c:
-                append(similarity(b, d))
+                pairs[edge.index] = b, d
             elif a == d:
-                append(similarity(b, c))
+                pairs[edge.index] = b, c
             elif b == c:
-                append(similarity(a, d))
+                pairs[edge.index] = a, d
             else:   # b == d
-                append(similarity(a, c))
-
-        linegraph.es["score"] = scores
+                pairs[edge.index] = a, c
+        linegraph.es["score"] = similarity(pairs)
         return linegraph
 
     def _run_single(self, threshold):
