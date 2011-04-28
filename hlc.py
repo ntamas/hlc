@@ -15,6 +15,7 @@ hope so. Also, it handles all the input graph formats that igraph_ handles.
 """
 
 from __future__ import division, print_function
+from array import array
 from collections import defaultdict
 from igraph import Graph, load
 from igraph import __version__ as igraph_version
@@ -291,8 +292,7 @@ class HLC(object):
         # Construct the line graph
         linegraph = self.graph.linegraph()
 
-        # Create an adjacency list representation (we already have an edgelist)
-        # and select the appropriate similarity function
+        # Select the appropriate similarity function
         if "weight" in self.graph.edge_attributes():
             similarity = TanimotoSimilarityCalculator(self.graph).get_similarity_many
         elif OptimizedJaccardSimilarityCalculator.is_supported():
@@ -302,18 +302,25 @@ class HLC(object):
 
         # For each edge in the line graph, compute a similarity score
         edgelist = self._edgelist    # prelookup
-        pairs = [None] * linegraph.ecount()
+        sources, targets = array('l'), array('l')
+        sources.extend(0 for _ in xrange(linegraph.ecount()))
+        targets.extend(0 for _ in xrange(linegraph.ecount()))
         for edge in linegraph.es:
             (a, b), (c, d) = edgelist[edge.source], edgelist[edge.target]
+            i = edge.index
             if a == c:
-                pairs[edge.index] = b, d
+                sources[i] = b
+                targets[i] = d
             elif a == d:
-                pairs[edge.index] = b, c
+                sources[i] = b
+                targets[i] = c
             elif b == c:
-                pairs[edge.index] = a, d
+                sources[i] = a
+                targets[i] = d
             else:   # b == d
-                pairs[edge.index] = a, c
-        linegraph.es["score"] = similarity(pairs)
+                sources[i] = a
+                targets[i] = c
+        linegraph.es["score"] = similarity(izip(sources, targets))
         return linegraph
 
     def _run_single(self, threshold):
